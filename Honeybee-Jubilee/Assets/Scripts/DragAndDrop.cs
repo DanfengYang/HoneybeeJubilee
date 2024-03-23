@@ -1,29 +1,40 @@
 using UnityEngine;
-using System.Collections.Generic; // Needed for using Lists
+using System.Collections.Generic;
+using UnityEngine.SceneManagement;
 
 public class DragAndDrop : MonoBehaviour
 {
-    public GameObject trailPrefab; // Prefab for the trail object
-    public float trailSpawnInterval = 0.1f; // Time interval between spawning trail objects
+    public GameObject trailPrefab;
+    public float trailSpawnInterval = 0.1f;
+    public Material trailMaterial;
+    public Color trailColor = Color.white;
+    public Color outOfBoundsColor = Color.red; // Color when out of bounds
+    public float startWidth = 0.1f;
+    public float endWidth = 0.0f;
+    public float timeToLive = 1.0f;
+    public Collider2D targetObjectCollider; // Collider of the target object
+
+    public Collider2D endtargetObjectCollider; 
 
     private Camera mainCamera;
     private TrailRenderer currentTrail;
     private float lastTrailSpawnTime;
-    private List<GameObject> trailPool = new List<GameObject>(); // Object pool for trails
-    private int poolSize = 10; // Initial size of the pool
-    private bool isDragging = false; // Added a flag to check if dragging has started
+    private List<GameObject> trailPool = new List<GameObject>();
+    private int poolSize = 10;
+    private bool isDragging = false;
+    private Vector3 initialPosition;
 
     void Start()
     {
         mainCamera = Camera.main;
         InitializeTrailPool();
+        initialPosition = transform.position;
     }
 
     void Update()
     {
         if (Input.GetMouseButtonDown(0))
         {
-            // Check if the mouse is over the GameObject when the click starts
             Vector3 mousePos = mainCamera.ScreenToWorldPoint(Input.mousePosition);
             RaycastHit2D hit = Physics2D.Raycast(mousePos, Vector2.zero);
 
@@ -38,20 +49,28 @@ public class DragAndDrop : MonoBehaviour
             FollowMouse();
         }
 
-        // When mouse button is released, stop dragging
         if (Input.GetMouseButtonUp(0))
         {
             isDragging = false;
         }
     }
 
-    void FollowMouse()
+void FollowMouse()
+{
+    Vector3 mousePosition = mainCamera.ScreenToWorldPoint(Input.mousePosition);
+    mousePosition.z = 0f;
+
+    if (!targetObjectCollider.OverlapPoint(mousePosition))
     {
-        Vector3 mousePosition = mainCamera.ScreenToWorldPoint(Input.mousePosition);
-        mousePosition.z = 0f;
-
+        if (currentTrail != null)
+        {
+            currentTrail.material.color = outOfBoundsColor; // Change trail color to red
+        }
+        isDragging = false; // Optionally stop dragging if out of bounds
+    }
+    else
+    {
         transform.position = mousePosition;
-
         if (Time.time - lastTrailSpawnTime > trailSpawnInterval)
         {
             SpawnTrailObject();
@@ -59,6 +78,13 @@ public class DragAndDrop : MonoBehaviour
         }
     }
 
+    // Check collision with endtargetObject
+    if (endtargetObjectCollider != null && endtargetObjectCollider.OverlapPoint(mousePosition))
+    {
+        // Load the GameScene2 when colliding with endtargetObject
+        SceneManager.LoadScene("GameScene2");
+    }
+}
     void SpawnTrailObject()
     {
         GameObject trail = GetPooledTrail();
@@ -67,41 +93,52 @@ public class DragAndDrop : MonoBehaviour
             trail.transform.position = transform.position;
             trail.SetActive(true);
             currentTrail = trail.GetComponent<TrailRenderer>();
+            SetupTrailRenderer(currentTrail);
         }
-        // Optionally, handle the case where trail is null (all trails in use and pool at max size)
     }
-    // Initializes the pool of trail objects
+
     void InitializeTrailPool()
     {
         for (int i = 0; i < poolSize; i++)
         {
             GameObject trail = Instantiate(trailPrefab, transform.position, Quaternion.identity);
             trail.SetActive(false);
+            TrailRenderer trRenderer = trail.GetComponent<TrailRenderer>();
+            if (trRenderer == null)
+            {
+                trRenderer = trail.AddComponent<TrailRenderer>();
+            }
+            SetupTrailRenderer(trRenderer);
             trailPool.Add(trail);
         }
     }
 
-    // Returns an inactive trail object from the pool, if available
     GameObject GetPooledTrail()
     {
-        for (int i = 0; i < trailPool.Count; i++)
+        foreach (GameObject trail in trailPool)
         {
-            if (!trailPool[i].activeInHierarchy)
+            if (!trail.activeInHierarchy)
             {
-                return trailPool[i];
+                return trail;
             }
         }
 
-        // Return null if poolSize is reached and all trails are active, instead of expanding the pool
-        if (trailPool.Count >= poolSize)
-        {
-            return null; // No available trail, and pool size limit reached
-        }
+        // If all trails are active and the pool is at max size, do not expand the pool further
+        return null;
+    }
 
-        // Expand the pool if under max size and no available inactive objects
-        GameObject trail = Instantiate(trailPrefab, transform.position, Quaternion.identity);
-        trail.SetActive(false);
-        trailPool.Add(trail);
-        return trail;
+    private void SetupTrailRenderer(TrailRenderer tr)
+    {
+        tr.material = trailMaterial;
+        tr.startColor = trailColor;
+        tr.endColor = trailColor;
+        tr.startWidth = startWidth;
+        tr.endWidth = endWidth;
+        tr.time = timeToLive;
+        // setting the renderQueue to make the trail render above other objects
+        tr.material.renderQueue = 3000;
+        tr.sortingLayerName = "Foreground";
+        // Set the order within the layer (Higher values are rendered on top)
+        tr.sortingOrder = 1;
     }
 }
